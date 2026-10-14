@@ -9,7 +9,9 @@ on:
     branches: [main]
 
 env:
-  IMAGE: ghcr.io/${{ github.repository }}
+  # GHCR repository paths must be all-lowercase, but our GitHub owner name has
+  # uppercase letters, so we set the image name explicitly in lowercase here.
+  IMAGE: ghcr.io/neevenemmanuel/eventease
 
 jobs:
   # 1. Lint + unit/integration tests with a real Postgres service container.
