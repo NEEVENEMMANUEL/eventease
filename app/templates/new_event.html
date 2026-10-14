@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Post an event &middot; EventEase{% endblock %}
+
+{% block content %}
+<h1>Post an event</h1>
+
+<form method="post" action="{{ url_for('main.create_event') }}" class="card form">
+  <label>
+    Event name
+    <input type="text" name="name" required maxlength="200">
+  </label>
+
+  <label>
+    Organiser contact
+    <input type="text" name="organiser_contact" placeholder="email or phone" required maxlength="200">
+  </label>
+
+  <label>
+    Description
+    <textarea name="description" rows="5" placeholder="What's the event about?"></textarea>
+  </label>
+
+  <label>
+    Capacity
+    <input type="number" name="capacity" min="1" value="20" required>
+  </label>
+
+  <button type="submit" class="btn">Create event</button>
+  <a class="link" href="{{ url_for('main.index') }}">Cancel</a>
+</form>
+{% endblock %}

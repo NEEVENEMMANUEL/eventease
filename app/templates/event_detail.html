@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}{{ event.name }} &middot; EventEase{% endblock %}
+
+{% block content %}
+<a class="link" href="{{ url_for('main.index') }}">&larr; Back to events</a>
+
+<h1>{{ event.name }}</h1>
+
+<div class="event-meta">
+  {% if event.is_full %}
+    <span class="pill pill-full">Full</span>
+  {% else %}
+    <span class="pill">{{ event.spots_remaining }} of {{ event.capacity }} spots left</span>
+  {% endif %}
+  <span class="muted">Contact: {{ event.organiser_contact }}</span>
+</div>
+
+{% if event.description %}
+  <p class="description">{{ event.description }}</p>
+{% endif %}
+
+<section class="card">
+  <h2>Sign up</h2>
+  {% if event.is_full %}
+    <p class="muted">This event is full. Registration is closed.</p>
+  {% else %}
+    <form method="post" action="{{ url_for('main.signup', event_id=event.id) }}" class="form">
+      <label>
+        Your name
+        <input type="text" name="name" required maxlength="200">
+      </label>
+      <label>
+        Email
+        <input type="email" name="email" required maxlength="200">
+      </label>
+      <button type="submit" class="btn">Register</button>
+    </form>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Who's coming ({{ event.spots_taken }})</h2>
+  {% if event.signups %}
+    <ul class="signup-list">
+      {% for s in event.signups %}
+        <li>{{ s.name }}</li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">No sign-ups yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

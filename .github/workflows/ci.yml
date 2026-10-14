@@ -1,0 +1,176 @@
+name: EventEase CI/CD
+
+# Push to main runs the full pipeline through to Production.
+# Pull requests run lint + tests only (nothing is deployed).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  # 1. Lint + unit/integration tests with a real Postgres service container.
+  test:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: eventease
+          POSTGRES_PASSWORD: eventease
+          POSTGRES_DB: eventease_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U eventease"
+          --health-interval 5s --health-timeout 3s --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint (flake8)
+        run: flake8 .
+
+      - name: Unit + integration tests with coverage gate
+        env:
+          # Integration tests run against the Postgres service container.
+          TEST_DATABASE_URL: postgresql://eventease:eventease@localhost:5432/eventease_test
+        run: pytest --cov=app --cov-report=term-missing --cov-fail-under=70
+
+  # 2. Build the image once and push it to GHCR tagged with the commit SHA.
+  build-and-push:
+    needs: test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set image tag
+        id: meta
+        run: echo "tag=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.meta.outputs.tag }}
+            ${{ env.IMAGE }}:latest
+          build-args: |
+            BUILD_NUMBER=${{ github.run_number }}
+            GIT_SHA=${{ github.sha }}
+
+  # 3. Deploy the exact image to Staging, then run E2E + smoke tests.
+  deploy-staging:
+    needs: build-and-push
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy image to Staging EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ~/eventease
+            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            export APP_IMAGE=${{ env.IMAGE }}:${{ needs.build-and-push.outputs.image_tag }}
+            export BUILD_NUMBER=${{ github.run_number }}
+            export GIT_SHA=${{ github.sha }}
+            docker compose pull app
+            docker compose up -d
+
+      - name: Smoke test (health check)
+        run: |
+          sleep 10
+          curl --fail --retry 5 --retry-delay 5 http://${{ secrets.STAGING_HOST }}/health
+
+      - name: Set up Python for E2E
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Playwright
+        run: |
+          pip install -r requirements-dev.txt
+          playwright install --with-deps chromium
+
+      - name: Run E2E tests against Staging
+        env:
+          BASE_URL: http://${{ secrets.STAGING_HOST }}
+        run: pytest tests/e2e -m e2e
+
+  # 4. Promote the SAME image to Production, with health check + auto rollback.
+  deploy-production:
+    needs: [build-and-push, deploy-staging]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Deploy to Production EC2 (record previous, deploy, verify, rollback on failure)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ~/eventease
+            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+            # 1. Record the currently running image so we can roll back.
+            PREVIOUS=$(cat .current_image 2>/dev/null || echo "${{ env.IMAGE }}:latest")
+            NEW=${{ env.IMAGE }}:${{ needs.build-and-push.outputs.image_tag }}
+
+            # 2. Deploy the new image.
+            export APP_IMAGE=$NEW
+            export BUILD_NUMBER=${{ github.run_number }}
+            export GIT_SHA=${{ github.sha }}
+            docker compose pull app
+            docker compose up -d
+
+            # 3. Health check.
+            sleep 10
+            if curl --fail --retry 5 --retry-delay 5 http://localhost/health; then
+              echo "$NEW" > .current_image
+              echo "Deployment healthy."
+            else
+              # 4. Roll back to the previous working image.
+              echo "Health check failed - rolling back to $PREVIOUS"
+              export APP_IMAGE=$PREVIOUS
+              docker compose up -d
+              exit 1
+            fi
+
+      - name: Notify Discord
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          curl -H "Content-Type: application/json" \
+            -d "{\"content\": \"EventEase production deploy for \`${GITHUB_SHA::7}\`: ${STATUS}\"}" \
+            "${{ secrets.DISCORD_WEBHOOK }}" || true
