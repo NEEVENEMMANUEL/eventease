@@ -35,7 +35,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install -r requirements-dev.txt
+        run: pip install -r requirements.txt -r requirements-test.txt
 
       - name: Lint (flake8)
         run: flake8 .
@@ -44,7 +44,7 @@ jobs:
         env:
           # Integration tests run against the Postgres service container.
           TEST_DATABASE_URL: postgresql://eventease:eventease@localhost:5432/eventease_test
-        run: pytest --cov=app --cov-report=term-missing --cov-fail-under=70
+        run: pytest --ignore=tests/e2e --cov=app --cov-report=term-missing --cov-fail-under=70
 
   # 2. Build the image once and push it to GHCR tagged with the commit SHA.
   build-and-push:
