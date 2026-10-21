@@ -27,7 +27,8 @@ def create_app(config_name=None):
             "git_sha": app.config["GIT_SHA"],
         }
 
-    with app.app_context():
-        db.create_all()
-
+    # NOTE: table creation is intentionally NOT done here. When gunicorn runs
+    # multiple workers they would each call db.create_all() concurrently on an
+    # empty database and race each other (duplicate pg_type entries). Tables are
+    # created once at container start by init_db.py, before the workers boot.
     return app

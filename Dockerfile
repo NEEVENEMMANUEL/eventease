@@ -26,5 +26,7 @@ ENV BUILD_NUMBER=$BUILD_NUMBER \
 
 EXPOSE 8000
 
+# Create the tables once (init_db.py), then start gunicorn. Doing the table
+# creation before the workers boot avoids a concurrent-create race between them.
 # 3 workers is plenty for a t3.small; tune with the WEB_CONCURRENCY env var.
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "3", "wsgi:app"]
+CMD ["sh", "-c", "python init_db.py && exec gunicorn --bind 0.0.0.0:8000 --workers 3 wsgi:app"]
