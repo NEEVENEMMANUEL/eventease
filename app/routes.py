@@ -26,7 +26,7 @@ def index():
 @bp.route("/events/new", methods=["GET"])
 def new_event():
     return render_template("new_event.html")
-#test 1 
+
 
 @bp.route("/events", methods=["POST"])
 def create_event():
