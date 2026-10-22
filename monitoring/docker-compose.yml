@@ -1,0 +1,71 @@
+# EventEase monitoring stack: Prometheus + Grafana + Node Exporter.
+#
+# Run this ON THE PRODUCTION SERVER, from the repo root, AFTER the app stack is up:
+#   docker compose -f monitoring/docker-compose.yml up -d
+#
+# Then open Grafana at http://<PROD_PUBLIC_IP>:3000  (login admin / admin).
+# The Prometheus data source and the "EventEase — Production Overview"
+# dashboard are provisioned automatically, so there's nothing to wire by hand.
+services:
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: eventease-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - promdata:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - monitoring
+      - eventease   # so Prometheus can scrape the app at app:8000/metrics
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: eventease-node-exporter
+    restart: unless-stopped
+    pid: host
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    ports:
+      - "9100:9100"
+    networks:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: eventease-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafanadata:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "3000:3000"
+    networks:
+      - monitoring
+    depends_on:
+      - prometheus
+
+networks:
+  monitoring:
+  # Join the app's existing Docker network so "app:8000" resolves for scraping.
+  # The main stack (docker-compose.yml in the repo root) creates this network as
+  # "<project>_default"; the project name defaults to the folder name "eventease".
+  eventease:
+    external: true
+    name: eventease_default
+
+volumes:
+  promdata:
+  grafanadata:

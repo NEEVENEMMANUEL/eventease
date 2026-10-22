@@ -1,0 +1,13 @@
+# Tells Grafana to auto-load any dashboard JSON it finds in this folder.
+apiVersion: 1
+
+providers:
+  - name: EventEase
+    orgId: 1
+    folder: ""
+    type: file
+    disableDeletion: false
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false
