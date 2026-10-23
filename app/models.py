@@ -17,7 +17,7 @@ class Event(db.Model):
     signups = db.relationship(
         "Signup", backref="event", cascade="all, delete-orphan", lazy="select"
     )
-#error popup 1
+
 
     @property
     def spots_taken(self):
