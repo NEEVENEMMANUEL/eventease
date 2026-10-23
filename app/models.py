@@ -3,7 +3,6 @@ from datetime import datetime
 
 from app import db
 
-
 class Event(db.Model):
     __tablename__ = "events"
 
