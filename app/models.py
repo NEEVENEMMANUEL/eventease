@@ -3,6 +3,7 @@ from datetime import datetime
 
 from app import db
 
+
 class Event(db.Model):
     __tablename__ = "events"
 
@@ -16,7 +17,6 @@ class Event(db.Model):
     signups = db.relationship(
         "Signup", backref="event", cascade="all, delete-orphan", lazy="select"
     )
-
 
     @property
     def spots_taken(self):
